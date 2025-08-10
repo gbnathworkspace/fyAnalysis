@@ -1,8 +1,8 @@
 # === Financial Analysis Module ===
-
-from packages import *
+from typing import Dict, List, Tuple
 from config.config import Config
 from FinancialDataLoader import FinancialDataRetriever
+import yfinance as yf
 
 class FundamentalAnalyzer:
     """Analyzes stocks based on fundamental metrics"""
@@ -20,97 +20,152 @@ class FundamentalAnalyzer:
         """
         print(f"\nAnalyzing fundamental data for {ticker}...")
 
-        # Initialize metrics dictionary
-        metrics = {
-            'roe': None,
-            'debt_to_equity': None,
-            'net_profit_margin': None,
-            'current_ratio': None,
-            'interest_coverage': None,
-            'free_cash_flow': None
-        }
         try:
-          # Try all data sources in order of preference
-          for source in Config.DATA_SOURCES:
-              try:
-                  if source == 'yfinance_info':
-                      # Get direct Yahoo Finance metrics
-                      print(f"Fetching data from Yahoo Finance API for {ticker}...")
-                      stock = yf.Ticker(ticker)
-                      info = stock.info
-                      yf_metrics = {
-                          'roe': info.get('returnOnEquity'),
-                          'debt_to_equity': info.get('debtToEquity'),
-                          'net_profit_margin': info.get('profitMargins'),
-                          'current_ratio': info.get('currentRatio'),
-                          'interest_coverage': info.get('interestCoverage'),
-                          'free_cash_flow': info.get('freeCashflow')
-                      }
-                      # Update only missing metrics
-                      for k, v in yf_metrics.items():
-                          if metrics[k] is None and v is not None:
-                              metrics[k] = v
+            # Initialize metrics dictionary
+            metrics = {
+                'roe': None,
+                'debt_to_equity': None,
+                'net_profit_margin': None,
+                'current_ratio': None,
+                'interest_coverage': None,
+                'free_cash_flow': None
+            }
 
-                  elif source == 'yfinance_calculated':
-                      # Get calculated metrics from financial statements
-                      calculated = FinancialDataRetriever.get_calculated_metrics(ticker)
+            # Try all data sources in order of preference
+            for source in Config.DATA_SOURCES:
+                try:
+                    if source == 'yfinance_info':
+                        FundamentalAnalyzer._fetch_yfinance_data(ticker, metrics)
+                    elif source == 'yfinance_calculated':
+                        FundamentalAnalyzer._fetch_calculated_metrics(ticker, metrics)
+                    elif source == 'screener':
+                        FundamentalAnalyzer._fetch_screener_data(ticker, metrics)
 
-                      if calculated:
-                          for k, v in calculated.items():
-                              if metrics[k] is None and v is not None:
-                                  metrics[k] = v
+                    # Check if all metrics are now available
+                    if all(v is not None for v in metrics.values()):
+                        break
 
-                  elif source == 'screener':
-                      # Get Screener.in metrics
-                      screener_metrics = FinancialDataRetriever.get_screener_data(ticker.replace('.NS', ''))
+                except Exception as e:
+                    print(f"WARNING: Failed {source} for {ticker} - {str(e)}")
+                    continue
 
-                      if screener_metrics:
-                          for k, v in screener_metrics.items():
-                              if metrics[k] is None and v is not None:
-                                  metrics[k] = v
+            # Clean up and validate metrics
+            FundamentalAnalyzer._validate_and_cleanup_metrics(metrics)
+            
+            # Display results
+            FundamentalAnalyzer._display_metrics(ticker, metrics)
 
-                  # Check if all metrics are now available
-                  if all(v is not None for v in metrics.values()):
-                      break
+            return metrics
 
-              except Exception as e:
-                  print(f"WARNING: Failed {source} for {ticker} - {str(e)}")
-                  continue
-
-          # Final cleanup and validation
-          for k in ['roe', 'net_profit_margin']:
-              if metrics[k] is None:
-                  metrics[k] = 0  # Set minimum defaults
-
-          # Convert values to appropriate types
-          try:
-              metrics['free_cash_flow'] = float(metrics['free_cash_flow']) if metrics['free_cash_flow'] else 0
-          except (TypeError, ValueError):
-              metrics['free_cash_flow'] = 0
-
-          # Display metrics in a nice format
-          print(f"\nFinal metrics for {ticker}:")
-          for k, v in metrics.items():
-              if k == 'free_cash_flow':
-                  print(f"  • {k}: ₹{v/1e7:.2f} Cr")
-              elif k in ['roe', 'net_profit_margin']:
-                  print(f"  • {k}: {v*100:.2f}%")
-              else:
-                  print(f"  • {k}: {v:.2f}")
-          line = '|'.join(str(metrics[k]) for k in [
-              'roe',
-              'debt_to_equity',
-              'net_profit_margin',
-              'current_ratio',
-              'interest_coverage',
-              'free_cash_flow'
-          ])
-          print(line)
         except Exception as e:
-          print(f"ERROR: Error getting fundamental data: {str(e)}")
-          return {}
+            print(f"ERROR: Error getting fundamental data: {str(e)}")
+            return {}
 
-        return metrics
+    @staticmethod
+    def _fetch_yfinance_data(ticker: str, metrics: Dict[str, float]) -> None:
+        """
+        Fetch additional metrics from Yahoo Finance if not already present
+        Args:
+            ticker: Stock ticker symbol with exchange suffix
+            metrics: Dictionary of existing metrics to update
+        """
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            yf_metrics = {
+                'roe' : info.get('returnOnEquity'),
+                'debt_to_equity': info.get('debtToEquity'),
+                'net_profit_margin': info.get('profitMargins'),
+                'current_ratio': info.get('currentRatio'),
+                'interest_coverage': info.get('interestCoverage'),
+                'free_cash_flow': info.get('freeCashflow')
+            }
+            for k, v in yf_metrics.items():
+                if metrics[k] is None and v is not None:
+                    metrics[k] = v
+            
+        except Exception as e:
+            print(f"WARNING: Error fetching data from Yahoo Finance for {ticker}: {str(e)}")
+
+    @staticmethod
+    def _fetch_calculated_metrics(ticker: str, metrics: Dict[str, float]) -> None:
+        """
+        Fetch calculated metrics from financial statements and update metrics dict
+
+        Args:
+            ticker: Stock ticker symbol
+            metrics: Metrics dictionary to update
+        """
+        try:
+            calculated = FinancialDataRetriever.get_calculated_metrics(ticker)
+            if calculated:
+                for k, v in calculated.items():
+                    if metrics[k] is None and v is not None:
+                        metrics[k] = v
+        except Exception as e:
+            print(f"WARNING: Error fetching calculated metrics for {ticker}: {str(e)}")
+            
+    def _fetch_screener_data(ticker: str, metrics: Dict[str, float]) -> None:
+        """
+        Fetch metrics from Screener.in and update metrics dict
+        Args:
+            ticker: Stock ticker symbol
+            metrics: Metrics dictionary to update
+        """
+        try:
+            screener_metrics = FinancialDataRetriever.get_screener_data(ticker.replace('.NS', ''))
+            if screener_metrics:
+                for k, v in screener_metrics.items():
+                    if metrics[k] is None and v is not None:
+                        metrics[k] = v
+        except Exception as e:
+            print(f"WARNING: Error fetching Screener.in data for {ticker}: {str(e)}")
+    
+    @staticmethod
+    def _validate_and_cleanup_metrics(metrics: Dict[str, float]) -> None:
+        """
+        Clean up and validate metrics, setting defaults for missing values
+        
+        Args:
+            metrics: Metrics dictionary to validate and clean up
+        """
+        # Set minimum defaults for critical metrics
+        for k in ['roe', 'net_profit_margin']:
+            if metrics[k] is None:
+                metrics[k] = 0  # Set minimum defaults
+        
+        # Convert free cash flow to appropriate type
+        try:
+            metrics['free_cash_flow'] = float(metrics['free_cash_flow']) if metrics['free_cash_flow'] else 0
+        except (TypeError, ValueError):
+            metrics['free_cash_flow'] = 0
+
+    @staticmethod
+    def _display_metrics(ticker: str, metrics: Dict[str, float]) -> None:
+        """
+        Display metrics in a formatted way
+        
+        Args:
+            ticker: Stock ticker symbol
+            metrics: Metrics dictionary to display
+        """
+        print(f"\nFinal metrics for {ticker}:")
+        for k, v in metrics.items():
+            if k == 'free_cash_flow':
+                print(f"  • {k}: ₹{v/1e7:.2f} Cr")
+            elif k in ['roe', 'net_profit_margin']:
+                print(f"  • {k}: {v*100:.2f}%")
+            else:
+                print(f"  • {k}: {v:.2f}")
+        line = '|'.join(str(metrics[k]) for k in [
+            'roe',
+            'debt_to_equity',
+            'net_profit_margin',
+            'current_ratio',
+            'interest_coverage',
+            'free_cash_flow'
+        ])
+        print(line)
 
     @staticmethod
     def calculate_score(metrics: Dict[str, float]) -> float:

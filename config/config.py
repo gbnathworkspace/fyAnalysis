@@ -35,8 +35,9 @@ class Config:
     # Data sources priority
     DATA_SOURCES = [
         'yfinance_info',
-        'yfinance_calculated',
-        'screener'
+        'screener',
+        'yfinance_calculated'
+
     ]
 
     # Request headers for web scraping

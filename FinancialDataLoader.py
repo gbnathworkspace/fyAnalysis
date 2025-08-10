@@ -1,4 +1,9 @@
-from packages import *
+import time
+from typing import Dict, List, Optional
+import yfinance as yf
+from bs4 import BeautifulSoup
+import pandas as pd
+import requests
 from config.config import Config
 
 class FinancialDataRetriever:

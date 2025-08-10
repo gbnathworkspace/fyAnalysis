@@ -1,4 +1,6 @@
-from packages import *
+import os
+import pandas as pd
+from typing import List
 
 
 class DataLoader:
@@ -43,10 +45,7 @@ class DataLoader:
 
             # Display a sample of the data
             print("\nSample of loaded stock data:")
-            try:
-                display(df.head())
-            except NameError:
-                print(df.head())
+            print(df.head())
 
             return df
 
